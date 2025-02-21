@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .models import Organization, OrganizationMember
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -28,3 +29,20 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
         token['username'] = user.username
         return token
+
+class OrganizationSerializer(serializers.ModelSerializer):
+    created_by = serializers.StringRelatedField(read_only=True)
+    invite_code = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = Organization
+        fields = ('id', 'name', 'invite_code', 'created_by', 'created_at')
+
+class JoinOrganizationSerializer(serializers.Serializer):
+    invite_code = serializers.CharField()
+
+    def validate_invite_code(self, value):
+        try:
+            return Organization.objects.get(invite_code=value)
+        except Organization.DoesNotExist:
+            raise serializers.ValidationError("Invalid invite code.")
