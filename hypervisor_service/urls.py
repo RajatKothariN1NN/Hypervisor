@@ -9,6 +9,8 @@ schema_view = get_schema_view(
         title="Hypervisor Service API",
         default_version='v1',
         description="API documentation for MLOps Hypervisor Service",
+        contact=openapi.Contact(email="support@mlops.com"),
+        license=openapi.License(name="MIT License"),
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),

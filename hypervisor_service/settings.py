@@ -24,7 +24,7 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG', default=False)
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['0.0.0.0']
 
 
 
@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'drf_yasg',
+    'django_rq',
     'core'
 ]
 
@@ -50,6 +51,25 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+RQ_QUEUES = {
+    'default': {
+        'HOST': env('REDIS_HOST', default='localhost'),
+        'PORT': env.int('REDIS_PORT', default=6379),
+        'DB': 0,
+        'DEFAULT_TIMEOUT': 360,
+    }
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": env('REDIS_URL'),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
 
 ROOT_URLCONF = 'hypervisor_service.urls'
 

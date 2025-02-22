@@ -3,10 +3,14 @@ from django.contrib.auth.models import User
 from .serializers import UserSerializer, RegisterSerializer, CustomTokenObtainPairSerializer
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from .models import Organization, OrganizationMember
-from .serializers import OrganizationSerializer, JoinOrganizationSerializer
+from .models import Organization, OrganizationMember, Cluster
+from .serializers import OrganizationSerializer, JoinOrganizationSerializer, ClusterSerializer
 from .swagger import JWTSwaggerAutoSchema
-
+from django_rq import job, get_queue
+from .models import Deployment
+from .serializers import DeploymentSerializer
+from django.db import models
+from django.db import transaction
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -75,3 +79,142 @@ class JoinOrganizationView(generics.CreateAPIView):
             {"detail": "Successfully joined the organization."},
             status=status.HTTP_201_CREATED
         )
+
+class ClusterListCreateView(generics.ListCreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ClusterSerializer
+    schema_class = JWTSwaggerAutoSchema
+
+    def get_queryset(self):
+        return Cluster.objects.all()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+class ClusterDetailView(generics.RetrieveAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ClusterSerializer
+    schema_class = JWTSwaggerAutoSchema
+    queryset = Cluster.objects.all()
+
+@job('default', timeout=3600)
+def process_deployment(deployment_id):
+    from .models import Deployment
+    deployment = Deployment.objects.get(id=deployment_id)
+
+    # Check resource availability
+    cluster = deployment.cluster
+    if (cluster.available_ram >= deployment.required_ram and
+            cluster.available_cpu >= deployment.required_cpu and
+            cluster.available_gpu >= deployment.required_gpu):
+
+        # Allocate resources
+        cluster.allocated_ram += deployment.required_ram
+        cluster.allocated_cpu += deployment.required_cpu
+        cluster.allocated_gpu += deployment.required_gpu
+        cluster.save()
+
+        deployment.status = Deployment.Status.RUNNING
+        deployment.save()
+        # TODO: Add actual deployment logic
+    else:
+        # Keep in queue
+        deployment.status = Deployment.Status.PENDING
+        deployment.save()
+        get_queue('default').enqueue(process_deployment, deployment.id)
+
+
+class DeploymentListCreateView(generics.ListCreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DeploymentSerializer
+    schema_class = JWTSwaggerAutoSchema
+
+    def get_queryset(self):
+        return Deployment.objects.filter(created_by=self.request.user)
+
+    def perform_create(self, serializer):
+        deployment = serializer.save(created_by=self.request.user)
+        process_deployment.delay(deployment.id)
+
+
+class DeploymentDetailView(generics.RetrieveAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DeploymentSerializer
+    schema_class = JWTSwaggerAutoSchema
+    queryset = Deployment.objects.all()
+
+
+def find_preemptable_deployments(cluster, current_priority):
+    """Find running deployments with lower priority than current deployment"""
+    PRIORITY_ORDER = {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
+    return Deployment.objects.filter(
+        cluster=cluster,
+        status=Deployment.Status.RUNNING,
+    ).annotate(
+        priority_order=models.Case(
+            *[models.When(priority=p, then=v) for p, v in PRIORITY_ORDER.items()],
+            output_field=models.IntegerField()
+        )
+    ).filter(priority_order__lt=PRIORITY_ORDER[current_priority]).order_by('priority_order')
+
+
+@job('default', timeout=3600)
+def process_deployment(deployment_id):
+    deployment = Deployment.objects.get(id=deployment_id)
+    cluster = deployment.cluster
+
+    print(f"Processing deployment {deployment.id} (priority: {deployment.priority})")
+    print(f"Cluster resources - Total: {cluster.total_ram}GB, Allocated: {cluster.allocated_ram}GB, Available: {cluster.available_ram}GB")
+
+    def can_allocate(deployment):
+        return (
+            cluster.available_ram >= deployment.required_ram and
+            cluster.available_cpu >= deployment.required_cpu and
+            cluster.available_gpu >= deployment.required_gpu
+        )
+
+    with transaction.atomic():
+        # Try direct allocation
+        if can_allocate(deployment):
+            print("Direct allocation possible")
+            cluster.allocated_ram += deployment.required_ram
+            cluster.allocated_cpu += deployment.required_cpu
+            cluster.allocated_gpu += deployment.required_gpu
+            cluster.save()
+            deployment.status = Deployment.Status.RUNNING
+            deployment.save()
+            return
+
+        # Preemption logic
+        preemptable = find_preemptable_deployments(cluster, deployment.priority)
+        print(f"Found {preemptable.count()} preemptable deployments")
+
+        # Track preempted deployments
+        preempted_deployments = []
+
+        for victim in preemptable:
+            print(f"Preempting deployment {victim.id} (priority: {victim.priority})")
+            victim.release_resources()  # Release resources from the victim
+            preempted_deployments.append(victim)  # Track preempted deployments
+            print('Cluster after victim release ', cluster)
+
+            # Check if enough resources are freed
+            if can_allocate(deployment):
+                print("Allocation possible after preemption")
+                cluster.allocated_ram += deployment.required_ram
+                cluster.allocated_cpu += deployment.required_cpu
+                cluster.allocated_gpu += deployment.required_gpu
+                cluster.save()
+                deployment.status = Deployment.Status.RUNNING
+                deployment.save()
+
+                # Re-queue all preempted deployments
+                for preempted in preempted_deployments:
+                    get_queue('default').enqueue(process_deployment, preempted.id)
+                return
+
+        # If still no resources, re-queue
+        print("Insufficient resources, re-queuing deployment")
+        deployment.status = Deployment.Status.PENDING
+        deployment.save()
+        get_queue('default').enqueue(process_deployment, deployment.id)
