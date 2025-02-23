@@ -1,7 +1,7 @@
 from rest_framework import serializers
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Organization, OrganizationMember, Cluster, Deployment
+from .models import Organization, OrganizationMember, Cluster, Deployment, Role
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -11,18 +11,31 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    role = serializers.ChoiceField(
+        choices=Role.RoleType.choices,
+        write_only=True
+    )
 
     class Meta:
         model = User
-        fields = ('username', 'password', 'email')
+        fields = ('username', 'password', 'email', 'role')
 
     def create(self, validated_data):
+        role = validated_data.pop('role').title()
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
             email=validated_data.get('email', '')
         )
+        group = Group.objects.get(name=role)
+        user.groups.add(group)
+        user = User.objects.get(pk=user.pk)
         return user
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['role'] = instance.groups.first().name  # Include role in response
+        return representation
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod

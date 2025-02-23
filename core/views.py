@@ -11,6 +11,7 @@ from .models import Deployment
 from .serializers import DeploymentSerializer
 from django.db import models
 from django.db import transaction
+from .permissions import IsAdmin, IsDeveloper, IsViewer
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -81,7 +82,7 @@ class JoinOrganizationView(generics.CreateAPIView):
         )
 
 class ClusterListCreateView(generics.ListCreateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
     serializer_class = ClusterSerializer
     schema_class = JWTSwaggerAutoSchema
 
@@ -125,7 +126,7 @@ def process_deployment(deployment_id):
 
 
 class DeploymentListCreateView(generics.ListCreateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsDeveloper]
     serializer_class = DeploymentSerializer
     schema_class = JWTSwaggerAutoSchema
 
@@ -218,3 +219,5 @@ def process_deployment(deployment_id):
         deployment.status = Deployment.Status.PENDING
         deployment.save()
         get_queue('default').enqueue(process_deployment, deployment.id)
+
+

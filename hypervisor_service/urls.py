@@ -6,9 +6,9 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="Hypervisor Service API",
+        title="MLOps Hypervisor Service API",
         default_version='v1',
-        description="API documentation for MLOps Hypervisor Service",
+        description="Role-Based Access:\n- Admins: Full access\n- Developers: Create/view deployments\n- Viewers: Read-only",
         contact=openapi.Contact(email="support@mlops.com"),
         license=openapi.License(name="MIT License"),
     ),

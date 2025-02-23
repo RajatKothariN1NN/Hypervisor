@@ -2,16 +2,27 @@ from django.urls import reverse
 from django_rq import get_worker
 from rest_framework.test import APITestCase
 from django.contrib.auth.models import User
-
+from django.contrib.auth.models import Group
 from .models import Organization, OrganizationMember, Cluster, Deployment
 from .views import process_deployment
 
 
 class AuthTests(APITestCase):
+    def setUp(self):
+        # Create groups if they don't exist
+        Group.objects.get_or_create(name='ADMIN')
+        Group.objects.get_or_create(name='DEVELOPER')
+        Group.objects.get_or_create(name='VIEWER')
+
     def test_register_user(self):
         url = reverse('register')
-        data = {'username': 'testuser1', 'password': 'testpass123'}
+        data = {
+            'username': 'testuser1',
+            'password': 'testpass123',
+            'role': 'VIEWER'
+        }
         response = self.client.post(url, data, format='json')
+        print(response.data)
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(username='testuser1').exists())
 
@@ -25,7 +36,7 @@ class AuthTests(APITestCase):
         self.assertTrue('refresh_token' in response.data)
 
     def test_profile_access(self):
-        user = User.objects.create_user(username='testuser1', password='testpass123')
+        user = User.objects.create_user(username='testuser1', password='testpass123', role='Admin')
         self.client.force_authenticate(user=user)
         url = reverse('profile')
         response = self.client.get(url)
@@ -33,7 +44,10 @@ class AuthTests(APITestCase):
         self.assertEqual(response.data['username'], 'testuser1')
 class OrganizationTests(APITestCase):
     def setUp(self):
+        Group.objects.get_or_create(name='Admin')
         self.user = User.objects.create_user(username="admin", password="admin123")
+        admin_group = Group.objects.get(name='Admin')
+        self.user.groups.add(admin_group)
         self.client.force_authenticate(user=self.user)
         self.org = Organization.objects.create(name="Test Org", created_by=self.user)
 
@@ -62,7 +76,10 @@ class OrganizationTests(APITestCase):
 
 class ClusterTests(APITestCase):
     def setUp(self):
+        Group.objects.get_or_create(name='Admin')
         self.user = User.objects.create_user(username="admin", password="admin123")
+        admin_group = Group.objects.get(name='Admin')
+        self.user.groups.add(admin_group)
         self.client.force_authenticate(user=self.user)
 
     def test_create_cluster(self):
@@ -106,7 +123,15 @@ class ClusterTests(APITestCase):
 
 class DeploymentTests(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="admin", password="admin123")
+        Group.objects.get_or_create(name='DEVELOPER')
+
+        # Create developer user
+        self.user = User.objects.create_user(username="dev", password="dev123")
+        dev_group = Group.objects.get(name='Developer')
+        print(dev_group)
+        self.user.groups.add(dev_group)
+        self.user.save()
+        print('Hi, the user is : ', self.user, self.user.groups)
         self.cluster = Cluster.objects.create(
             name="Test Cluster",
             total_ram=64,
@@ -124,8 +149,10 @@ class DeploymentTests(APITestCase):
             "required_cpu": 4,
             "required_gpu": 1,
             "priority": "HIGH",
-            "cluster": self.cluster.id
+            "cluster": self.cluster.id,
+            'created_by': self.user.id
         }
+        print('Hi, the user role is : ', self.user.groups)
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(Deployment.objects.count(), 1)
@@ -192,7 +219,10 @@ class DeploymentTests(APITestCase):
 
 class SchedulingTests(APITestCase):
     def setUp(self):
+        Group.objects.get_or_create(name='Admin')
         self.user = User.objects.create_user(username="admin", password="admin123")
+        admin_group = Group.objects.get(name='Admin')
+        self.user.groups.add(admin_group)
         self.cluster = Cluster.objects.create(
             name="Test Cluster",
             total_ram=64,
@@ -247,3 +277,33 @@ class SchedulingTests(APITestCase):
         self.assertEqual(self.cluster.allocated_ram, 48)
         self.assertEqual(self.cluster.allocated_cpu, 12)
         self.assertEqual(self.cluster.allocated_gpu, 3)
+
+class RBACTests(APITestCase):
+    def setUp(self):
+        # Create groups
+        Group.objects.get_or_create(name='Admin')
+        Group.objects.get_or_create(name='Developer')
+        Group.objects.get_or_create(name='Viewer')
+
+        # Create test users
+        self.admin = User.objects.create_user(username="admin", password="admin123")
+        admin_group = Group.objects.get(name='Admin')
+        self.admin.groups.add(admin_group)
+
+        self.developer = User.objects.create_user(username="dev", password="dev123")
+        dev_group = Group.objects.get(name='Developer')
+        self.developer.groups.add(dev_group)
+
+    def test_admin_cluster_creation(self):
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('cluster-list-create')
+        data = {"name": "Test Cluster", "total_ram": 64, "total_cpu": 16, "total_gpu": 4}
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 201)
+
+    def test_developer_cluster_creation(self):
+        self.client.force_authenticate(user=self.developer)
+        url = reverse('cluster-list-create')
+        data = {"name": "Test Cluster", "total_ram": 64, "total_cpu": 16, "total_gpu": 4}
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 403)

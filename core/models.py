@@ -81,3 +81,19 @@ class Deployment(models.Model):
         self.save()
     def __str__(self):
         return f"{self.docker_image_path} ({self.status})"
+
+class Role(models.Model):
+    class RoleType(models.TextChoices):
+        ADMIN = 'ADMIN', 'Admin'
+        DEVELOPER = 'DEVELOPER', 'Developer'
+        VIEWER = 'VIEWER', 'Viewer'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    role = models.CharField(max_length=20, choices=RoleType.choices)
+
+    class Meta:
+        unique_together = ('user', 'organization')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.organization.name} ({self.role})"
