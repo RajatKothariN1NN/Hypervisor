@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User, Group
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Organization, OrganizationMember, Cluster, Deployment, Role
+from .models import Organization, Cluster, Deployment, Role
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -34,7 +34,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        representation['role'] = instance.groups.first().name  # Include role in response
+        representation['role'] = instance.groups.first().name
         return representation
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

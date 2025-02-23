@@ -24,9 +24,9 @@ class OrganizationMember(models.Model):
 
 class Cluster(models.Model):
     name = models.CharField(max_length=255)
-    total_ram = models.IntegerField(help_text="Total RAM in GB")  # in GB
-    total_cpu = models.IntegerField(help_text="Total CPU cores")  # in cores
-    total_gpu = models.IntegerField(help_text="Total GPU units")  # in units
+    total_ram = models.IntegerField(help_text="Total RAM in GB")
+    total_cpu = models.IntegerField(help_text="Total CPU cores")
+    total_gpu = models.IntegerField(help_text="Total GPU units")
     allocated_ram = models.IntegerField(default=0)
     allocated_cpu = models.IntegerField(default=0)
     allocated_gpu = models.IntegerField(default=0)
