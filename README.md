@@ -1,7 +1,3 @@
-(Due to technical issues, the search service is temporarily unavailable.)
-
-Here's an optimized README.md that integrates with your Docker setup and environment variables:
-
 ```markdown
 # MLOps Hypervisor Service
 
