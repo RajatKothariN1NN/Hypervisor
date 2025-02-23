@@ -100,7 +100,6 @@ class ClusterDetailView(generics.RetrieveAPIView):
 
 @job('default', timeout=3600)
 def process_deployment(deployment_id):
-    from .models import Deployment
     deployment = Deployment.objects.get(id=deployment_id)
 
     # Check resource availability
@@ -174,7 +173,16 @@ def process_deployment(deployment_id):
             cluster.available_gpu >= deployment.required_gpu
         )
 
+    def dependencies_completed(deployment):
+        return all(dep.status == Deployment.Status.COMPLETED for dep in deployment.dependencies.all())
+
     with transaction.atomic():
+        if not dependencies_completed(deployment):
+            print("Dependencies not completed, re-queuing deployment")
+            deployment.status = Deployment.Status.PENDING
+            deployment.save()
+            get_queue('default').enqueue(process_deployment, deployment.id)
+            return
         # Try direct allocation
         if can_allocate(deployment):
             print("Direct allocation possible")

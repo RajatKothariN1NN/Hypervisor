@@ -307,3 +307,68 @@ class RBACTests(APITestCase):
         data = {"name": "Test Cluster", "total_ram": 64, "total_cpu": 16, "total_gpu": 4}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 403)
+
+class DeploymentDependencyTests(APITestCase):
+    def setUp(self):
+        Group.objects.get_or_create(name='DEVELOPER')
+
+        # Create developer user
+        self.user = User.objects.create_user(username="dev", password="dev123")
+        dev_group = Group.objects.get(name='Developer')
+        print(dev_group)
+        self.user.groups.add(dev_group)
+        self.user.save()
+        print('Hi, the user is : ', self.user, self.user.groups)
+        self.cluster = Cluster.objects.create(
+            name="Test Cluster",
+            total_ram=64,
+            total_cpu=16,
+            total_gpu=4,
+            created_by=self.user
+        )
+        self.client.force_authenticate(user=self.user)
+
+
+    def test_dependency_handling(self):
+        # Create dependency deployment
+        dependency = Deployment.objects.create(
+            docker_image_path="dependency-image",
+            required_ram=16,
+            required_cpu=4,
+            required_gpu=1,
+            priority="LOW",
+            cluster=self.cluster,
+            created_by=self.user
+        )
+
+        # Create dependent deployment
+        dependent = Deployment.objects.create(
+            docker_image_path="dependent-image",
+            required_ram=16,
+            required_cpu=4,
+            required_gpu=1,
+            priority="HIGH",
+            cluster=self.cluster,
+            created_by=self.user
+        )
+        dependent.dependencies.add(dependency)
+
+        # Process dependent deployment
+        process_deployment(dependent.id)
+        get_worker().work(burst=True)
+
+        # Verify dependency handling
+        dependent.refresh_from_db()
+        self.assertEqual(dependent.status, Deployment.Status.PENDING)
+
+        # Mark dependency as completed
+        dependency.status = Deployment.Status.COMPLETED
+        dependency.save()
+
+        # Process dependent deployment again
+        process_deployment(dependent.id)
+        get_worker().work(burst=True)
+
+        # Verify dependent deployment is running
+        dependent.refresh_from_db()
+        self.assertEqual(dependent.status, Deployment.Status.RUNNING)

@@ -64,6 +64,12 @@ class Deployment(models.Model):
     required_ram = models.IntegerField()
     required_cpu = models.IntegerField()
     required_gpu = models.IntegerField()
+    dependencies = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='dependent_deployments',
+        blank=True
+    )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.MEDIUM)
     cluster = models.ForeignKey(Cluster, on_delete=models.CASCADE, related_name='deployments')

@@ -85,13 +85,17 @@ class DeploymentSerializer(serializers.ModelSerializer):
     status = serializers.CharField(read_only=True)
     created_by = serializers.StringRelatedField(read_only=True)
     cluster = serializers.PrimaryKeyRelatedField(queryset=Cluster.objects.all())
-
+    dependencies = serializers.PrimaryKeyRelatedField(
+        queryset=Deployment.objects.all(),
+        many=True,
+        required=False
+    )
     class Meta:
         model = Deployment
         fields = [
             'id', 'docker_image_path', 'status', 'priority',
             'required_ram', 'required_cpu', 'required_gpu',
-            'cluster', 'created_by', 'created_at', 'updated_at'
+            'cluster', 'created_by', 'created_at', 'updated_at', 'dependencies'
         ]
 
     def validate(self, data):

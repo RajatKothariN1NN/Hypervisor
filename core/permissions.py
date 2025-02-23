@@ -7,8 +7,8 @@ class IsAdmin(permissions.BasePermission):
 
 class IsDeveloper(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.groups.filter(name='Developer').exists()
+        return request.user.groups.filter(name='Admin').exists() or request.user.groups.filter(name='Developer').exists()
 
 class IsViewer(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.groups.filter(name='Viewer').exists()
+        return request.user.groups.filter(name='Admin').exists() or request.user.groups.filter(name='Developer').exists() or request.user.groups.filter(name='Viewer').exists()

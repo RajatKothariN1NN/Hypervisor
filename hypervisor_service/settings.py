@@ -41,7 +41,6 @@ INSTALLED_APPS = [
     'django_rq',
     'core'
 ]
-
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
